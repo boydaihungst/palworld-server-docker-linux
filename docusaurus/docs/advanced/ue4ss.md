@@ -37,7 +37,7 @@ Resource `.pak` mods are the simplest to install. No loader or framework require
 ## UE4SS mods
 
 This image bundles the x86-64 Linux build of [UE4SS](https://github.com/XarminaEu/ue4ss-linux).
-Enable it with `UE4SS_ENABLED=true` on an amd64 host. ARM64 support requires a patched Box64 build which is currently in progress.
+Enable it with `UE4SS_ENABLED=true`. ARM64 runs the loader through the bundled Box64 compatibility build.
 
 Mount your mods at `/palworld/Pal/Binaries/Linux/Mods`. The included Compose example uses `./mods`:
 

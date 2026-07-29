@@ -18,6 +18,29 @@ RUN wget -q https://github.com/gorcon/rcon-cli/archive/refs/tags/v${RCON_VERSION
     && go build -v ./cmd/gorcon
 
 FROM cm2network/steamcmd:root-trixie AS base-amd64
+
+FROM base-amd64 AS box64-amd64
+RUN touch /tmp/box64
+
+FROM --platform=linux/arm64 debian:trixie AS box64-arm64
+ARG BOX64_COMMIT="23f8db631d48ad246f71dec47f1afa2133687f60"
+ARG BOX64_TGZ_SHA256="53ed44942e84944d5e16b038006f02695475b67d10abc23703d7f78e988c9921"
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    cmake \
+    patch \
+    wget \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY patches/box64-dl-iterate-phdr-callbacks.patch /tmp/
+RUN wget -q "https://github.com/ptitSeb/box64/archive/${BOX64_COMMIT}.tar.gz" -O box64.tar.gz \
+    && echo "${BOX64_TGZ_SHA256}  box64.tar.gz" | sha256sum -c - \
+    && tar -xzf box64.tar.gz --strip-components=1 \
+    && patch -p1 < /tmp/box64-dl-iterate-phdr-callbacks.patch \
+    && cmake -S . -B build -DARM_DYNAREC=ON -DCMAKE_BUILD_TYPE=Release \
+    && cmake --build build -j2 \
+    && install -Dm755 build/box64 /tmp/box64
+
 # Ignoring --platform=arm64 as this is required for the multi-arch build to continue to work on amd64 hosts
 # hadolint ignore=DL3029
 FROM --platform=arm64 sonroyaalmerol/steamcmd-arm64:root-trixie-2026-06-07 AS base-arm64
@@ -26,6 +49,7 @@ ARG TARGETARCH
 # and hadolint isn't aware of those.
 # hadolint ignore=DL3006
 FROM base-${TARGETARCH}
+COPY --from=box64-${TARGETARCH} /tmp/box64 /tmp/box64
 
 LABEL maintainer="thijs@loef.dev" \
       name="thijsvanloef/palworld-server-docker" \
@@ -63,6 +87,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     python3 python3-venv python3-pip \
     && (apt-get install -y --no-install-recommends libicu76 || apt-get install -y --no-install-recommends libicu72 || apt-get install -y --no-install-recommends libicu67) \
     && (apt-get install -y --no-install-recommends libsdl3-0 || apt-get install -y --no-install-recommends libsdl3-0-0) \
+    && if [ "${TARGETARCH}" = "arm64" ]; then install -m 755 /tmp/box64 /usr/local/bin/box64; fi \
+    && rm -f /tmp/box64 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -97,13 +123,11 @@ RUN case "${TARGETARCH}" in \
     && chmod +x DepotDownloader \
     && mv DepotDownloader /usr/local/bin/DepotDownloader
 
-RUN if [ "${TARGETARCH}" = "amd64" ]; then \
-        wget --progress=dot:giga "https://github.com/XarminaEu/ue4ss-linux/releases/download/v${UE4SS_VERSION}/ue4ss-linux-v${UE4SS_VERSION}.tar.gz" -O ue4ss.tar.gz \
-        && echo "${UE4SS_TGZ_SHA256}  ue4ss.tar.gz" | sha256sum -c - \
-        && mkdir -p /opt/ue4ss \
-        && tar -xzf ue4ss.tar.gz -C /opt/ue4ss \
-        && rm ue4ss.tar.gz; \
-    fi
+RUN wget --progress=dot:giga "https://github.com/XarminaEu/ue4ss-linux/releases/download/v${UE4SS_VERSION}/ue4ss-linux-v${UE4SS_VERSION}.tar.gz" -O ue4ss.tar.gz \
+    && echo "${UE4SS_TGZ_SHA256}  ue4ss.tar.gz" | sha256sum -c - \
+    && mkdir -p /opt/ue4ss \
+    && tar -xzf ue4ss.tar.gz -C /opt/ue4ss \
+    && rm ue4ss.tar.gz
 
 # install patched knockd (as same as https://github.com/itzg/docker-minecraft-server/blob/master/build/ubuntu/install-packages.sh)
 RUN wget --progress=dot:giga https://github.com/Metalcape/knock/releases/download/0.8.1/knock-${KNOCK_VERSION}-${TARGETARCH}.tar.gz -O /tmp/knock.tar.gz && \
